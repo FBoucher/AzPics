@@ -1,0 +1,139 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "webAppName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of your Web App."
+            },
+            "defaultValue": "Azpics",
+            "maxLength": 12
+        },
+        "branchName": {
+            "type": "string",
+            "metadata": {
+                "description": "The name of your Git branch (Recommended: master)."
+            },
+            "defaultValue": "master"
+        }
+    },
+    "variables": {
+        "suffix": "[substring(toLower(uniqueString(resourceGroup().id, resourceGroup().location)),0,5)]",
+        "webAppName": "[toLower(concat(parameters('webAppName'), variables('suffix')))]",
+        "storageName": "[concat(variables('webAppName'), 'stg')]",
+        "appSvcPlanName": "[concat(variables('webAppName'), 'plan')]",
+        "cognitiveServices":"[concat(variables('webAppName'), 'ai')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2018-07-01",
+            "name": "[variables('storageName')]",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "displayName": "[variables('storageName')]"
+            },
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "StorageV2",
+            "resources": [
+                {
+                    "type": "blobServices/containers",
+                    "apiVersion": "2018-07-01",
+                    "name": "[concat('default/', 'images')]",
+                    "dependsOn": [
+                        "[variables('storageName')]"
+                    ],
+                    "properties": {
+                        "publicAccess": "Blob"
+                    }
+                },
+                {
+                    "type": "blobServices/containers",
+                    "apiVersion": "2018-07-01",
+                    "name": "[concat('default/', 'upload')]",
+                    "dependsOn": [
+                        "[variables('storageName')]"
+                    ],
+                    "properties": {
+                        "publicAccess": "Blob"
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2018-02-01",
+            "name": "[variables('webAppName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms/', variables('appSvcPlanName'))]",
+                "[resourceId('Microsoft.Storage/storageAccounts/', variables('storageName'))]"
+            ],
+            "properties": {
+                "name": "[variables('webAppName')]",
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms/', variables('appSvcPlanName'))]"
+            },
+            "resources": [
+                {
+                    "apiVersion": "2018-02-01",
+                    "type": "config",
+                    "name": "connectionstrings",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/sites', variables('webAppName'))]",
+                        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+                    ],
+                    "properties": {
+                        "ApplicationStorage": {
+                            "value": "[Concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]",
+                            "type": "Custom"
+                        }
+                    }
+                },
+                {
+                    "apiVersion": "2018-02-01",
+                    "name": "web",
+                    "type": "sourcecontrols",
+                    "dependsOn": [
+                        "[resourceId('Microsoft.Web/sites', variables('webAppName'))]"
+                    ],
+                    "properties": {
+                        "repoUrl":"https://github.com/FBoucher/AzPics.git",
+                        "branch": "[parameters('branchName')]",
+                        "publishRunbook": true,
+                        "IsManualIntegration": true
+                    }
+                }
+            ]
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2016-09-01",
+            "name": "[variables('appSvcPlanName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "F1",
+                "capacity": 1
+            },
+            "tags": {
+                "displayName": "[variables('appSvcPlanName')]"
+            },
+            "properties": {
+                "name": "[variables('appSvcPlanName')]"
+            }
+        },
+        {
+            "name": "[variables('cognitiveServices')]",
+            "type": "Microsoft.CognitiveServices/accounts",
+            "apiVersion": "2017-04-18",
+            "sku": {
+              "name": "F0"
+            },
+            "kind": "ComputerVision",
+            "location": "[resourceGroup().location]"
+          }
+    ],
+    "outputs": {}
+} 
